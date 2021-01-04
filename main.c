@@ -34,7 +34,7 @@
 // Use project enums instead of #define for ON and OFF.
 
 #include <xc.h>
-
+#include "keymap.h"
 
 #define _XTAL_FREQ 8000000 // this is used by the __delay_ms(xx) and __delay_us(xx) functions
 
@@ -51,10 +51,8 @@
 #define RST         RA4     // in
 #define RST_DIR     TRISA4
 
-#define DEBUG_OK        RA6
-#define DEBUG_OK_DIR    TRISA6
-#define DEBUG_NOK       RA7
-#define DEBUG_NOK_DIR   TRISA7
+#define DEBUG        RA6
+#define DEBUG_DIR    TRISA6
 
 #define DIR_OUT 0
 #define DIR_IN  1
@@ -62,16 +60,16 @@
 /*
  * special register bit defs (for test opcode)
  */
-#define SCRLLOCK	0			; 01
-#define NUMLOCK		1			; 02
-#define CAPSLOCK	2			; 04
-#define CONTROL     3			; 08
-#define SHIFT		4			; 10
-#define EXT			5			; 20
-#define EXTSH		6			; 40  
-#define RLSE		7			; 80  key release code
+#define SCRLLOCK	0			// 01
+#define NUMLOCK		1			// 02
+#define CAPSLOCK	2			// 04
+#define CONTROL     3			// 08
+#define SHIFT		4			// 10
+#define EXT			5			// 20
+#define EXTSH		6			// 40  
+#define RLSE		7			// 80  key release code
 
-byte special;
+int special = 0;
 byte data;
 byte lastbyte;
 byte parity;
@@ -82,20 +80,10 @@ byte read_bit;
 void blink_ok(int times) {
     static byte i;
     for (i = 0; i < times; i++) {
-        DEBUG_OK = 1;
+        DEBUG = 1;
         __delay_ms(100);
-        DEBUG_OK = 0;
+        DEBUG = 0;
         __delay_ms(100);
-    }
-}
-
-void blink_nok(int times) {
-    static byte i;
-    for (i = 0; i < times; i++) {
-        DEBUG_NOK = 1;
-        __delay_ms(150);
-        DEBUG_NOK = 0;
-        __delay_ms(150);
     }
 }
 
@@ -108,12 +96,11 @@ void setup(void) {
     KBCLK_DIR = DIR_IN; // start as input.
     KBDATA_DIR = DIR_IN; // start as input.
     DATARDY_DIR = DIR_OUT;
+    DATARDY = 1;        // active low
     DATAACK_DIR = DIR_IN;
     RST_DIR = DIR_IN;
-    DEBUG_OK_DIR = DIR_OUT;
-    DEBUG_NOK_DIR = DIR_OUT;
-    DEBUG_NOK = 0;
-    DEBUG_OK = 0;
+    DEBUG_DIR = DIR_OUT;
+    DEBUG = 0;
 }
 
 /*
@@ -193,8 +180,6 @@ byte get() {
         // wait while data is high.
     }
     highLow();   // cycle through the start bit.
-    RA2 = 0; // debug
-    RA2 = 1; // debug
     // process 8 data bits.
     for (i = 0; i < 8; i++) {
         read_bit = highLow();
@@ -210,9 +195,7 @@ byte get() {
     
     disable(); // disable the keyboard while we're processing
     // End of quick section.  We got all bits.
-    RA2 = 0; // debug    
     data = reverse(data);  // reverse the bits here.
-    RA2 = 1; // debug
     
     enable(); // enable the keyboard before we leave.
     
@@ -262,12 +245,117 @@ void send(byte d) {
     // TODO check read_bit = 0 (ack)
 }
 
+void initkbd() {
+    
+}
+
+byte lookup(byte d) {
+    if (special & (1<<SHIFT) || special & (1<<EXTSH)) {
+        return keymap_shifted[d];
+    } else {
+        return keymap[d];
+    }
+    
+}
+
+/*
+ * process key release code.
+ */
+void rlsproc(int * retVal, byte * data) {
+    special &= ~(1<<RLSE);  // clear release flag
+    if (*data == 0x11) {     // alt released?
+        *retVal = 0xE0;
+    } else if (*data == 0x12 || *data == 0x59) {  // shift released?
+        special &= ~(1<<SHIFT);
+    } else if (*data == 0x14) {  // ctrl released?
+        special &= ~(1<<CONTROL);
+    } else {
+         // else don't care, get next key.
+    }    
+}
+
+byte kbdinput() {
+    static int retVal;
+    retVal = -1;
+    while(retVal == -1) {
+        data = get();
+        if (special & 1 << RLSE) {  // if release flag set
+            // reference: Rlsproc
+            rlsproc(&retVal, &data);
+        } else if (special & 1 << EXT) {    // is ext flag active?
+            // reference: Extproc
+            special &= ~(1 << EXT);         // clear the ext flag
+            if (data == 0x12) {
+                special |= 1 << EXTSH;      // set ext shift flag.
+                continue;
+            } else if (data == 0x7C) {      // E07C - print screen?
+                special &= ~(1<<EXTSH);     // turn off ext shift flag?
+                retVal = lookup(0x0F);
+            } else if (data == 0x4A) {      // keypad div key
+                retVal = 0x2F;
+            } else if (data == 0xF0) {      // was it a release code?
+                data = get();
+                if (data == 0x12) {         // was it ext shift?
+                    special &= ~(1<<EXTSH);
+                    continue;
+                }
+                special &= ~(1<<RLSE);  // clear release flag
+                if (data == 0x11) {     // alt released?
+                    retVal = 0xE0;
+                    continue;
+                } else if (data == 0x12 || data == 0x59) {  // shift released?
+                    special &= ~(1<<SHIFT);
+                    continue;
+                } else if (data == 0x14) {  // ctrl released?
+                    special &= ~(1<<CONTROL);
+                    continue;
+                } else {
+                    continue;   // else don't care, get next key.
+                }                                
+            } else if (data == 0x7E) {        // ctrl-brk key?
+                retVal = 0x02;
+                continue;
+            } else if (data > 0x68 ) {  // if key is keypad key
+                retVal = lookup(data);
+            }
+        } else if (data == 0x12 || data == 0x59) {
+            special |= 1 << SHIFT;  // set shift state                    
+            //retVal = 0;             // no further action on shift.
+            continue;
+        } else if (data < 0x80) {
+            retVal = lookup(data);   
+        } else if (data == 0xE0) {  // ext code
+            special |= 1 << EXT;
+            continue;
+        } else if (data == 0xF0) {  // key release code?
+            special |= 1 << RLSE;   // set release state
+            continue;               // get the next byte;
+        } else {
+            continue;                // no valid key, get next
+        };
+
+    }
+    
+    return retVal;
+}
+
 void main(void) {
-    RA2 = 1; // debug;
     setup();
+    
+    initkbd();
         
     __delay_ms(2000);
     blink_ok(2);    // debug.
+    
+    while (1) {
+        data = kbdinput();
+        PORTB = data;       // present data to 6522
+        DATARDY = 0;        // activate data ready
+        while (DATAACK) {   // wait for ack (active low)        
+        }
+        // got ACK.
+        DATARDY = 1;
+    }
     
     byte leds[] = {2, 6, 5, 1, 0, 1, 5, 6, 2, 0};
     int cnt = 0;
