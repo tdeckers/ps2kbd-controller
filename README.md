@@ -31,6 +31,26 @@ When the controller receives a new character from the keyboard, it sets the
 data bits on port B. It then asserts the data_ready signal.  The CPU can then
 read the character through the VIA and that will automatically assert the 
 data_ack signal.
+Typical VIA configuration:
+
+    kbd_init:
+        LDA #$00        ; set all inputs: 0's
+        STA KBDDIR      ; DDRA register 
+        LDA #$08        ; configure handshake control for CA2
+        STA KBDCTRL     ; CONTROL register
+        LDA #$82        ; enable CA1 interrupt
+        STA KBDINT      ; IER register
+        RTS
+
+This enable interrupts to be generated for the 6502.  Example code for the 
+interrupt service routine:
+
+    irq_kbd:
+        LDA #$02        ; set mask for CA1 in IFR.
+        BIT KBDFLAGS    ; IFR register. Check if bit 1 (CA1) is set .
+        BEQ end         ; keyboard didn'y cause interrupt, end.
+        LDA KBD         ; else read KBD data into acc
+    end
 
 This project has been developed and tested with a PIC16F1826.
 
@@ -48,10 +68,11 @@ Future:
 ## Development notes
 
 IDE: MPLAB X IDE v5.40
+Typical project location: ~/MPLABXProjects/
 
-I've been using a couple LEDs on RA6 and RA7 to monitor what's going on.  In
-addition, the oscilloscoop was probing RA2 for key events to follow.  I'll 
-remove some of that code for the final version.
+I've been using a LED on RA6 to monitor what's going on.  In
+addition, the oscilloscope was probing RA2 for key events to follow.  Most of 
+that code has been removed.
 
 https://microchipdeveloper.com/c:bits-bools-and-bit-fields
 
@@ -59,4 +80,4 @@ https://microchipdeveloper.com/c:bits-bools-and-bit-fields
 
 I ran into programming issues with the *minipro* application and a TL866II Plus
 on Linux. It appears that that combo doesn't work well.
-Now using PIC-KIT3 right from the IDE.  Works like a charm.
+Now using PIC-KIT4 right from the IDE.  Works like a charm.
