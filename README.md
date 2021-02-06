@@ -39,6 +39,7 @@ This project has been developed and tested with a PIC16F1826.
 * Receive bytes from keyboard on key press and presents the byte to the VIA.
 * Send commands to keyboard (e.g. control LEDs)
 * Interfaces with a 6502 through a VIA port.
+* Switch to C64 keyboard codes by including keymap-c64.h instead.
 
 Future:
 * watchdog reset in case the controller gets stuck in any of the loops waiting

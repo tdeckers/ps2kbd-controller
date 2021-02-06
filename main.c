@@ -34,7 +34,7 @@
 // Use project enums instead of #define for ON and OFF.
 
 #include <xc.h>
-#include "keymap.h"
+#include "keymap-c64.h"
 
 #define _XTAL_FREQ 8000000 // this is used by the __delay_ms(xx) and __delay_us(xx) functions
 
