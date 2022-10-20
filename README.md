@@ -1,4 +1,4 @@
-# PIC based keyboard controller for use with 6051
+# PIC based keyboard controller for use with 6502
 
 ## Overview
 
